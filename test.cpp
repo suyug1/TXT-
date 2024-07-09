@@ -5,7 +5,14 @@
 #include <ws2tcpip.h>
 #include <time.h>
 
-// ∂Û¿Ã∫Í∑Ø∏Æ∏¶ ∏µ≈©«’¥œ¥Ÿ.
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define BUFFER_SIZE 1024
+
+
+// ÎùºÏù¥Î∏åÎü¨Î¶¨Î•º ÎßÅÌÅ¨Ìï©ÎãàÎã§.
 #pragma comment(lib, "Ws2_32.lib")
 
 void write_ip_and_time(FILE* file);
@@ -18,6 +25,8 @@ void reinitialize_file(const char* filename);
 long get_file_size(const char* filename);
 void calculate_time_difference(time_t start, time_t end, int* hours, int* minutes, int* seconds);
 void menual();
+void bring_file();
+void send_file(const char *server_ip);
 
 int main() {
     char command[10];
@@ -26,25 +35,25 @@ int main() {
     char iptime_filename[] = "iptime.txt";
     long start_size;
 
-    // «¡∑Œ±◊∑• Ω√¿€ Ω√ Ω√∞£¿ª ±‚∑œ
+    // ÌîÑÎ°úÍ∑∏Îû® ÏãúÏûë Ïãú ÏãúÍ∞ÑÏùÑ Í∏∞Î°ù
     time(&start_time);
 
-    // ∆ƒ¿œ ≈©±‚∏¶ »Æ¿Œ
+    // ÌååÏùº ÌÅ¨Í∏∞Î•º ÌôïÏù∏
     start_size = get_file_size("project.txt");
 
-    // iptime.txt ∆ƒ¿œ ø≠±‚ (æ¯¿∏∏È ª˝º∫)
+    // iptime.txt ÌååÏùº Ïó¥Í∏∞ (ÏóÜÏúºÎ©¥ ÏÉùÏÑ±)
     iptime_file = fopen(iptime_filename, "a+");
     if (iptime_file == NULL) {
         printf("Error opening file %s for appending!\n", iptime_filename);
         return 1;
     }
 
-    // «¡∑Œ±◊∑• Ω√¿€ Ω√ IPøÕ Ω√¿€ Ω√∞£¿ª ±‚∑œ
+    // ÌîÑÎ°úÍ∑∏Îû® ÏãúÏûë Ïãú IPÏôÄ ÏãúÏûë ÏãúÍ∞ÑÏùÑ Í∏∞Î°ù
     write_ip_and_time(iptime_file);
     menual();
 
     while (1) {
-        printf("Enter command (read, input, log, end, reiptime, reproject): ");
+        printf("Enter command (read, input, log, end, reiptime, reproject, send, bring): ");
         scanf("%s", command);
 
         if (strcmp(command, "read") == 0) {
@@ -76,8 +85,18 @@ int main() {
             reinitialize_file("project.txt");
         }
         else if (strcmp(command, "joke") == 0) {
-            printf("∞˙¥Á¿ª ≥ π´ ∏π¿Ã ∏‘¿∏∏È æ»µ«¥¬ ¿Ã¿Ø¥¬?\n");
-            printf("±Ê∞°¥Ÿ ≤ ¥Á «“ ºˆ ¿÷æÓº≠\n");
+            printf("Í≥ºÎãπÏùÑ ÎÑàÎ¨¥ ÎßéÏù¥ Î®πÏúºÎ©¥ ÏïàÎêòÎäî Ïù¥Ïú†Îäî?\n");
+            printf("Í∏∏Í∞ÄÎã§ ÍΩàÎãπ Ìï† Ïàò ÏûàÏñ¥ÏÑú\n");
+        }
+„ÄÄ„ÄÄ else if (strcmp(command, "bring") == 0) {
+            bring_file();
+            printf("ÌååÏùºÏùÑ Î∞õÏïÑÏòµÎãàÎã§.");
+        }
+        else if (strcmp(command, "send") == 0) {
+           const char *server_ip = "127.0.0.1"; // ÏÑúÎ≤ÑÏùò IP Ï£ºÏÜåÎ°ú Î≥ÄÍ≤ΩÌï¥Ïïº Ìï©ÎãàÎã§.
+           send_file(server_ip);
+           printf("ÌòÑÏû¨ÍπåÏßÄ ÏàòÏ†ïÌïú ÌååÏùºÏù¥ Ï†ÑÏÜ°ÎêòÏóàÏäµÎãàÎã§.");
+           return 0;
         }
         else {
             printf("Unknown command.\n");
@@ -88,71 +107,69 @@ int main() {
 }
 
 void write_ip_and_time(FILE* file) {
-    WSADATA wsaData;//¿©µµøÏ º“ƒœ √ ±‚»≠ µ•¿Ã≈Õ∏¶ ¿˙¿Â«œ¥¬ ±∏¡∂√º.
+    WSADATA wsaData;
     char hostname[256];
-    struct addrinfo hints, * result, * ptr;//¡÷º“ ¡§∫∏ ∞Àªˆø° ªÁøÎ«“ ±∏¡∂√º π◊ ∆˜¿Œ≈Õ.
-    char ipstr[INET_ADDRSTRLEN];//IP ¡÷º“∏¶ πÆ¿⁄ø≠∑Œ ¿˙¿Â«“ πˆ∆€.
+    struct addrinfo hints, * result, * ptr;
+    char ipstr[INET_ADDRSTRLEN];
+    char username[256];
     time_t t;
     struct tm* tm_info;
     char time_str[26];
+    FILE* user_file;
 
-    // ¿©º” √ ±‚»≠
+    // ÏúàÏÜç Ï¥àÍ∏∞Ìôî
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         printf("WSAStartup failed with error: %d\n", WSAGetLastError());
         return;
     }
 
-    // »£Ω∫∆Æ ¿Ã∏ß¿ª ∞°¡Æø»
+    // Ìò∏Ïä§Ìä∏ Ïù¥Î¶ÑÏùÑ Í∞ÄÏ†∏Ïò¥
     if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
         printf("Error getting hostname: %d\n", WSAGetLastError());
         WSACleanup();
         return;
     }
 
-    //« µÂ ±∏¡∂√º æ»¿« ±∏¡∂
-    // addrinfo ±∏¡∂√º∏¶ √ ±‚»≠
     ZeroMemory(&hints, sizeof(hints));
-    //±∏¡∂√º¿« ∏µÁ « µÂ∞° 0¿∏∑Œ º≥¡§
-    // ≥™¡ﬂø° ∆Ø¡§ « µÂ∏¶ º≥¡§«œ¡ˆ æ æ∆µµ ±‚∫ª∞™(0)¿∏∑Œ º≥¡§
-    // ¿Ã¥¬ øπªÛƒ° ∏¯«— µø¿€¿ª πÊ¡ˆ«’¥œ¥Ÿ.
     hints.ai_family = AF_INET; // IPv4
     hints.ai_socktype = SOCK_STREAM;
-    //ai_socktype « µÂ∏¶ SOCK_STREAM¿∏∑Œ º≥¡§
-    //getaddrinfo «‘ºˆ¥¬ Ω∫∆Æ∏≤ º“ƒœ(TCP º“ƒœ)¿ª π›»Ø
-    //Ω∫∆Æ∏≤ º“ƒœ¿∫ ø¨∞· ¡ˆ«‚¿˚¿Ã∏Á, µ•¿Ã≈Õ¿« æ»¡§¿˚¿Ã∞Ì º¯¬˜¿˚¿Œ ¿¸º€
     hints.ai_protocol = IPPROTO_TCP;
-    //ai_protocol « µÂ∏¶ IPPROTO_TCP∑Œ º≥¡§
-    //getaddrinfo «‘ºˆ¥¬ TCP «¡∑Œ≈‰ƒ›¿ª ªÁøÎ«œ¥¬ º“ƒœ∏∏ π›»Ø
-    //IPPROTO_TCP¥¬ TCP «¡∑Œ≈‰ƒ›¿ª ¿«πÃ
-    //ZeroMemory «‘ºˆ∑Œ hints ±∏¡∂√º∏¶ √ ±‚»≠«œ∞Ì, IPv4 ¡÷º“øÕ TCP º“ƒœ¿ª ªÁøÎ«œµµ∑œ º≥¡§«’¥œ¥Ÿ.
 
-    // »£Ω∫∆Æ ¿Ã∏ß¿∏∑Œ addrinfo ±∏¡∂√º∏¶ ∞°¡Æø»
     if (getaddrinfo(hostname, NULL, &hints, &result) != 0) {
         printf("getaddrinfo failed with error: %d\n", WSAGetLastError());
         WSACleanup();
         return;
     }
 
-    // IP ¡÷º“∏¶ √£¿Ω
+    // IP Ï£ºÏÜåÎ•º Ï∞æÏùå
     for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
         struct sockaddr_in* sockaddr_ipv4 = (struct sockaddr_in*)ptr->ai_addr;
         inet_ntop(AF_INET, &sockaddr_ipv4->sin_addr, ipstr, sizeof(ipstr));
 
-        // «ˆ¿Á Ω√∞£ ∞°¡Æø¿±‚
+        // ÏÇ¨Ïö©ÏûêÎ™Ö ÏûÖÎ†•
+        printf("Enter your username: ");
+        scanf("%s", username);
+
+        // ÌòÑÏû¨ ÏãúÍ∞Ñ Í∞ÄÏ†∏Ïò§Í∏∞
         time(&t);
         tm_info = localtime(&t);
         strftime(time_str, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
-        // IP ¡÷º“øÕ Ω√¿€ Ω√∞£¿ª ∆ƒ¿œø° ¿˙¿Â
-        fprintf(file, "IP Address: %s\n", ipstr);
+        // ÏÇ¨Ïö©ÏûêÎ™ÖÍ≥º ÏãúÏûë ÏãúÍ∞ÑÏùÑ ÌååÏùºÏóê Ï†ÄÏû•
+        fprintf(file, "Username: %s\n", username);
         fprintf(file, "Start Time: %s\n", time_str);
 
-        break; // √π π¯¬∞ IP ¡÷º“∏∏ ªÁøÎ
+        // user.txt ÌååÏùºÏóê IPÏôÄ ÏÇ¨Ïö©ÏûêÎ™Ö Ï†ÄÏû•
+        user_file = fopen("user.txt", "a");
+        if (user_file != NULL) {
+            fprintf(user_file, "IP Address: %s, Username: %s\n", ipstr, username);
+            fclose(user_file);
+        }
+
+        break;
     }
 
-    // addrinfo ±∏¡∂√º «ÿ¡¶
     freeaddrinfo(result);
-    // ¿©º” ¡§∏Æ
     WSACleanup();
 }
 
@@ -193,7 +210,7 @@ void input_to_file() {
     fprintf(file, "%s\n", input);
     fclose(file);
     printf("Text written to %s\n", filename);
-}//project.txt ∆ƒ¿œø° ¿‘∑¬«œ¥¬ «‘ºˆ
+}
 
 void log_file(FILE* iptime_file, time_t start_time, long start_size) {
     time_t log_time;
@@ -202,24 +219,20 @@ void log_file(FILE* iptime_file, time_t start_time, long start_size) {
     long project_size;
     int hours, minutes, seconds;
 
-    // «ˆ¿Á Ω√∞£ ∞°¡Æø¿±‚
     time(&log_time);
     tm_info = localtime(&log_time);
     strftime(time_str, 26, "%Y-%m-%d %H:%M:%S", tm_info);
     printf("Log Time: %s\n", time_str);
 
-    // «¡∑Œ¡ß∆Æ ∆ƒ¿œ ≈©±‚ »Æ¿Œ
     project_size = get_file_size("project.txt");
 
-    // Ω√∞£ ¬˜¿Ã ∞ËªÍ
     calculate_time_difference(start_time, log_time, &hours, &minutes, &seconds);
 
-    // ∆ƒ¿œø° ∑Œ±◊ Ω√∞£, ªÁøÎ Ω√∞£, ∆ƒ¿œ ≈©±‚ ±‚∑œ
     fprintf(iptime_file, "Log Time: %s\n", time_str);
     fprintf(iptime_file, "Time Used: %d hours, %d minutes, %d seconds\n", hours, minutes, seconds);
     fprintf(iptime_file, "Project File Size: %ld bytes\n", project_size);
     printf("Log written to iptime.txt\n");
-}//iptime.txt∏¶ ±∏º∫«œ¥¬ «‘ºˆ
+}
 
 void end_program(FILE* iptime_file, time_t start_time, long start_size) {
     time_t end_time;
@@ -228,19 +241,15 @@ void end_program(FILE* iptime_file, time_t start_time, long start_size) {
     long project_size;
     int hours, minutes, seconds;
 
-    // «ˆ¿Á Ω√∞£ ∞°¡Æø¿±‚
     time(&end_time);
     tm_info = localtime(&end_time);
     strftime(time_str, 26, "%Y-%m-%d %H:%M:%S", tm_info);
     printf("End Time: %s\n", time_str);
 
-    // Ω√∞£ ¬˜¿Ã ∞ËªÍ
     calculate_time_difference(start_time, end_time, &hours, &minutes, &seconds);
 
-    // «¡∑Œ¡ß∆Æ ∆ƒ¿œ ≈©±‚ »Æ¿Œ
     project_size = get_file_size("project.txt");
 
-    // ∆ƒ¿œø° ¡æ∑· Ω√∞£∞˙ ªÁøÎ«— Ω√∞£ ±‚∑œ
     fprintf(iptime_file, "Program End Time: %s\n", time_str);
     fprintf(iptime_file, "Total Time Used: %d hours, %d minutes, %d seconds\n", hours, minutes, seconds);
     fprintf(iptime_file, "Final Project File Size: %ld bytes\n", project_size);
@@ -263,7 +272,7 @@ void read_iptime_file() {
         printf("%s", buffer);
     }
     fclose(file);
-}//iptime.txt ∆ƒ¿œ¿ª √‚∑¬«œ¥¬ «‘ºˆ
+}
 
 void reinitialize_file(const char* filename) {
     FILE* file = fopen(filename, "w");
@@ -274,7 +283,7 @@ void reinitialize_file(const char* filename) {
     else {
         printf("Error reinitializing file %s!\n", filename);
     }
-}//∆ƒ¿œ¿Ã ª˝º∫¿Ã æ»µ∆¿ª ∞ÊøÏ ø¿∑˘∏¶ ∏∑¥¬ «‘ºˆ 
+}
 
 long get_file_size(const char* filename) {
     FILE* file = fopen(filename, "r");
@@ -289,14 +298,14 @@ long get_file_size(const char* filename) {
     fclose(file);
 
     return size;
-}//∆ƒ¿œ ≈©±‚ »Æ¿Œ¿ª «œ¥¬ «‘ºˆ
+}
 
 void calculate_time_difference(time_t start, time_t end, int* hours, int* minutes, int* seconds) {
     double time_diff = difftime(end, start);
     *hours = (int)(time_diff / 3600);
     *minutes = (int)((time_diff - (*hours * 3600)) / 60);
     *seconds = (int)(time_diff - (*hours * 3600) - (*minutes * 60));
-}//ªÁøÎ Ω√∞£¿ª ∞ËªÍ«œ¥¬ «‘ºˆ
+}
 
 void menual() {
     printf(" _______  __   __  _______    _______  ______   ___   _______  _______  ______ \n"  
@@ -309,19 +318,109 @@ void menual() {
 
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 10);
     printf("====================================================================================================================\n");
-    printf("MENUAL:) *¿Ã «¡∑Œ±◊∑•¿∫ Ω√¿€Ω√ ≈ÿΩ∫∆Æ∏¶ ∆Ì¡˝«“ project.txt ∆ƒ¿œ∞˙ ipøÕ Ω√∞£ øÎ∑Æ¿ª √¯¡§«“ iptime.txt ∆ƒ¿œ¿Ã ª˝º∫¿Ã µÀ¥œ¥Ÿ.\n");
-    printf("read: project.txt ∆ƒ¿œ¿ª ¿–Ω¿¥œ¥Ÿ.\n");
-    printf("input : project.txt ∆ƒ¿œø° ±€¿⁄∏¶ ¿‘∑¬«’¥œ¥Ÿ.\n");
-    printf("log : iptime.txt ∆ƒ¿œ¿ª ∫“∑Øø…¥œ¥Ÿ.\n");
-    printf("end : ∆ƒ¿œ¿ª ¡æ∑·«œ∞Ì ∏∂¡ˆ∏∑ ¡æ∑·Ω√∞£∞˙ øÎ∑Æ, ªÁøÎΩ√∞£¿ª iptime.txt ∆ƒ¿œø° ¿‘∑¬«’¥œ¥Ÿ.\n");
-    printf("reiptime : iptime.txt ∆ƒ¿œ¿ª √ ±‚»≠ «’¥œ¥Ÿ.\n");
-    printf("reproject : project.txt ∆ƒ¿œ¿ª √ ±‚»≠ «’¥œ¥Ÿ.\n\n");
-    printf("***log∆ƒ¿œ ¿–¥¬ πÊπ˝***\n");
-    printf("IP Address: ªÁøÎ¿⁄ æ∆¿Ã««(ip)\n");
-    printf("Start Time: «¡∑Œ±◊∑• Ω√¿€Ω√∞£\n");
-    printf("Program End Time: «¡∑Œ±◊∑• ¡æ∑· Ω√∞£\n");
-    printf("Total Time Used: «¡∑Œ±◊∑• ªÁøÎ Ω√∞£\n");
-    printf("Final File Size: ∆ƒ¿œ¿« øÎ∑Æ\n");
+    printf("MENUAL:) *Ïù¥ ÌîÑÎ°úÍ∑∏Îû®ÏùÄ ÏãúÏûëÏãú ÌÖçÏä§Ìä∏Î•º Ìé∏ÏßëÌï† project.txt ÌååÏùºÍ≥º ipÏôÄ ÏãúÍ∞Ñ Ïö©ÎüâÏùÑ Ï∏°Ï†ïÌï† iptime.txt ÌååÏùºÏù¥ ÏÉùÏÑ±Ïù¥ Îê©ÎãàÎã§.\n");
+    printf("read: project.txt ÌååÏùºÏùÑ ÏùΩÏäµÎãàÎã§.\n");
+    printf("input : project.txt ÌååÏùºÏóê Í∏ÄÏûêÎ•º ÏûÖÎ†•Ìï©ÎãàÎã§.\n");
+    printf("log : iptime.txt ÌååÏùºÏùÑ Î∂àÎü¨ÏòµÎãàÎã§.\n");
+    printf("end : ÌååÏùºÏùÑ Ï¢ÖÎ£åÌïòÍ≥† ÎßàÏßÄÎßâ Ï¢ÖÎ£åÏãúÍ∞ÑÍ≥º Ïö©Îüâ, ÏÇ¨Ïö©ÏãúÍ∞ÑÏùÑ iptime.txt ÌååÏùºÏóê ÏûÖÎ†•Ìï©ÎãàÎã§.\n");
+    printf("reiptime : iptime.txt ÌååÏùºÏùÑ Ï¥àÍ∏∞Ìôî Ìï©ÎãàÎã§.\n");
+    printf("reproject : project.txt ÌååÏùºÏùÑ Ï¥àÍ∏∞Ìôî Ìï©ÎãàÎã§.\n\n");
+    printf("***logÌååÏùº ÏùΩÎäî Î∞©Î≤ï***\n");
+    printf("Username: ÏÇ¨Ïö©ÏûêÎ™Ö\n");
+    printf("Start Time: ÌîÑÎ°úÍ∑∏Îû® ÏãúÏûëÏãúÍ∞Ñ\n");
+    printf("Program End Time: ÌîÑÎ°úÍ∑∏Îû® Ï¢ÖÎ£å ÏãúÍ∞Ñ\n");
+    printf("Total Time Used: ÌîÑÎ°úÍ∑∏Îû® ÏÇ¨Ïö© ÏãúÍ∞Ñ\n");
+    printf("Final File Size: ÌååÏùºÏùò Ïö©Îüâ\n");
     printf("====================================================================================================================\n");
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 15);
-}//∏≈¥∫æÛ¿ª √‚∑¬«œ¥¬ «‘ºˆ
+}
+
+void error_handling(char *message) {
+    perror(message);
+    exit(1);
+}
+
+void bring_file() {
+    int server_sock, client_sock;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_addr_size;
+    char buffer[BUFFER_SIZE];
+    FILE *file;
+
+    server_sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (server_sock == -1)
+        error_handling("socket() error");
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(PORT);
+
+    if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1)
+        error_handling("bind() error");
+
+    if (listen(server_sock, 5) == -1)
+        error_handling("listen() error");
+
+    client_addr_size = sizeof(client_addr);
+    client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_addr_size);
+    if (client_sock == -1)
+        error_handling("accept() error");
+
+    file = fopen("received_file", "wb");
+    if (file == NULL)
+        error_handling("fopen() error");
+
+    int bytes_received;
+    while ((bytes_received = read(client_sock, buffer, BUFFER_SIZE)) > 0) {
+        fwrite(buffer, sizeof(char), bytes_received, file);
+    }
+
+    if (bytes_received < 0)
+        error_handling("read() error");
+
+    printf("File received successfully.\n");
+
+    fclose(file);
+    close(client_sock);
+    close(server_sock);
+}
+
+void error_handling(char *message) {
+    perror(message);
+    exit(1);
+}
+
+void send_file(const char *server_ip) {
+    int sock;
+    struct sockaddr_in server_addr;
+    char buffer[BUFFER_SIZE];
+    FILE *file;
+
+    sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == -1)
+        error_handling("socket() error");
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(server_ip);
+    server_addr.sin_port = htons(PORT);
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1)
+        error_handling("connect() error");
+
+    file = fopen("send_file", "rb");
+    if (file == NULL)
+        error_handling("fopen() error");
+
+    int bytes_read;
+    while ((bytes_read = fread(buffer, sizeof(char), BUFFER_SIZE, file)) > 0) {
+        if (write(sock, buffer, bytes_read) != bytes_read)
+            error_handling("write() error");
+    }
+
+    printf("File sent successfully.\n");
+
+    fclose(file);
+    close(sock);
+}

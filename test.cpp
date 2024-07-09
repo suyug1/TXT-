@@ -5,13 +5,6 @@
 #include <ws2tcpip.h>
 #include <time.h>
 
-#include <unistd.h>
-#include <arpa/inet.h>
-
-#define PORT 8080
-#define BUFFER_SIZE 1024
-
-
 // 라이브러리를 링크합니다.
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -25,8 +18,6 @@ void reinitialize_file(const char* filename);
 long get_file_size(const char* filename);
 void calculate_time_difference(time_t start, time_t end, int* hours, int* minutes, int* seconds);
 void menual();
-void bring_file();
-void send_file(const char *server_ip);
 
 int main() {
     char command[10];
@@ -53,7 +44,7 @@ int main() {
     menual();
 
     while (1) {
-        printf("Enter command (read, input, log, end, reiptime, reproject, send, bring): ");
+        printf("Enter command (read, input, log, end, reiptime, reproject): ");
         scanf("%s", command);
 
         if (strcmp(command, "read") == 0) {
@@ -88,16 +79,6 @@ int main() {
             printf("과당을 너무 많이 먹으면 안되는 이유는?\n");
             printf("길가다 꽈당 할 수 있어서\n");
         }
-　　 else if (strcmp(command, "bring") == 0) {
-            bring_file();
-            printf("파일을 받아옵니다.");
-        }
-        else if (strcmp(command, "send") == 0) {
-           const char *server_ip = "127.0.0.1"; // 서버의 IP 주소로 변경해야 합니다.
-           send_file(server_ip);
-           printf("현재까지 수정한 파일이 전송되었습니다.");
-           return 0;
-        }
         else {
             printf("Unknown command.\n");
         }
@@ -107,15 +88,13 @@ int main() {
 }
 
 void write_ip_and_time(FILE* file) {
-    WSADATA wsaData;
+    WSADATA wsaData;//윈도우 소켓 초기화 데이터를 저장하는 구조체.
     char hostname[256];
-    struct addrinfo hints, * result, * ptr;
-    char ipstr[INET_ADDRSTRLEN];
-    char username[256];
+    struct addrinfo hints, * result, * ptr;//주소 정보 검색에 사용할 구조체 및 포인터.
+    char ipstr[INET_ADDRSTRLEN];//IP 주소를 문자열로 저장할 버퍼.
     time_t t;
     struct tm* tm_info;
     char time_str[26];
-    FILE* user_file;
 
     // 윈속 초기화
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -130,11 +109,24 @@ void write_ip_and_time(FILE* file) {
         return;
     }
 
+    //필드 구조체 안의 구조
+    // addrinfo 구조체를 초기화
     ZeroMemory(&hints, sizeof(hints));
+    //구조체의 모든 필드가 0으로 설정
+    // 나중에 특정 필드를 설정하지 않아도 기본값(0)으로 설정
+    // 이는 예상치 못한 동작을 방지합니다.
     hints.ai_family = AF_INET; // IPv4
     hints.ai_socktype = SOCK_STREAM;
+    //ai_socktype 필드를 SOCK_STREAM으로 설정
+    //getaddrinfo 함수는 스트림 소켓(TCP 소켓)을 반환
+    //스트림 소켓은 연결 지향적이며, 데이터의 안정적이고 순차적인 전송
     hints.ai_protocol = IPPROTO_TCP;
+    //ai_protocol 필드를 IPPROTO_TCP로 설정
+    //getaddrinfo 함수는 TCP 프로토콜을 사용하는 소켓만 반환
+    //IPPROTO_TCP는 TCP 프로토콜을 의미
+    //ZeroMemory 함수로 hints 구조체를 초기화하고, IPv4 주소와 TCP 소켓을 사용하도록 설정합니다.
 
+    // 호스트 이름으로 addrinfo 구조체를 가져옴
     if (getaddrinfo(hostname, NULL, &hints, &result) != 0) {
         printf("getaddrinfo failed with error: %d\n", WSAGetLastError());
         WSACleanup();
@@ -146,30 +138,21 @@ void write_ip_and_time(FILE* file) {
         struct sockaddr_in* sockaddr_ipv4 = (struct sockaddr_in*)ptr->ai_addr;
         inet_ntop(AF_INET, &sockaddr_ipv4->sin_addr, ipstr, sizeof(ipstr));
 
-        // 사용자명 입력
-        printf("Enter your username: ");
-        scanf("%s", username);
-
         // 현재 시간 가져오기
         time(&t);
         tm_info = localtime(&t);
         strftime(time_str, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
-        // 사용자명과 시작 시간을 파일에 저장
-        fprintf(file, "Username: %s\n", username);
+        // IP 주소와 시작 시간을 파일에 저장
+        fprintf(file, "IP Address: %s\n", ipstr);
         fprintf(file, "Start Time: %s\n", time_str);
 
-        // user.txt 파일에 IP와 사용자명 저장
-        user_file = fopen("user.txt", "a");
-        if (user_file != NULL) {
-            fprintf(user_file, "IP Address: %s, Username: %s\n", ipstr, username);
-            fclose(user_file);
-        }
-
-        break;
+        break; // 첫 번째 IP 주소만 사용
     }
 
+    // addrinfo 구조체 해제
     freeaddrinfo(result);
+    // 윈속 정리
     WSACleanup();
 }
 
@@ -210,7 +193,7 @@ void input_to_file() {
     fprintf(file, "%s\n", input);
     fclose(file);
     printf("Text written to %s\n", filename);
-}
+}//project.txt 파일에 입력하는 함수
 
 void log_file(FILE* iptime_file, time_t start_time, long start_size) {
     time_t log_time;
@@ -219,20 +202,24 @@ void log_file(FILE* iptime_file, time_t start_time, long start_size) {
     long project_size;
     int hours, minutes, seconds;
 
+    // 현재 시간 가져오기
     time(&log_time);
     tm_info = localtime(&log_time);
     strftime(time_str, 26, "%Y-%m-%d %H:%M:%S", tm_info);
     printf("Log Time: %s\n", time_str);
 
+    // 프로젝트 파일 크기 확인
     project_size = get_file_size("project.txt");
 
+    // 시간 차이 계산
     calculate_time_difference(start_time, log_time, &hours, &minutes, &seconds);
 
+    // 파일에 로그 시간, 사용 시간, 파일 크기 기록
     fprintf(iptime_file, "Log Time: %s\n", time_str);
     fprintf(iptime_file, "Time Used: %d hours, %d minutes, %d seconds\n", hours, minutes, seconds);
     fprintf(iptime_file, "Project File Size: %ld bytes\n", project_size);
     printf("Log written to iptime.txt\n");
-}
+}//iptime.txt를 구성하는 함수
 
 void end_program(FILE* iptime_file, time_t start_time, long start_size) {
     time_t end_time;
@@ -241,15 +228,19 @@ void end_program(FILE* iptime_file, time_t start_time, long start_size) {
     long project_size;
     int hours, minutes, seconds;
 
+    // 현재 시간 가져오기
     time(&end_time);
     tm_info = localtime(&end_time);
     strftime(time_str, 26, "%Y-%m-%d %H:%M:%S", tm_info);
     printf("End Time: %s\n", time_str);
 
+    // 시간 차이 계산
     calculate_time_difference(start_time, end_time, &hours, &minutes, &seconds);
 
+    // 프로젝트 파일 크기 확인
     project_size = get_file_size("project.txt");
 
+    // 파일에 종료 시간과 사용한 시간 기록
     fprintf(iptime_file, "Program End Time: %s\n", time_str);
     fprintf(iptime_file, "Total Time Used: %d hours, %d minutes, %d seconds\n", hours, minutes, seconds);
     fprintf(iptime_file, "Final Project File Size: %ld bytes\n", project_size);
@@ -272,7 +263,7 @@ void read_iptime_file() {
         printf("%s", buffer);
     }
     fclose(file);
-}
+}//iptime.txt 파일을 출력하는 함수
 
 void reinitialize_file(const char* filename) {
     FILE* file = fopen(filename, "w");
@@ -283,7 +274,7 @@ void reinitialize_file(const char* filename) {
     else {
         printf("Error reinitializing file %s!\n", filename);
     }
-}
+}//파일이 생성이 안됐을 경우 오류를 막는 함수 
 
 long get_file_size(const char* filename) {
     FILE* file = fopen(filename, "r");
@@ -298,14 +289,14 @@ long get_file_size(const char* filename) {
     fclose(file);
 
     return size;
-}
+}//파일 크기 확인을 하는 함수
 
 void calculate_time_difference(time_t start, time_t end, int* hours, int* minutes, int* seconds) {
     double time_diff = difftime(end, start);
     *hours = (int)(time_diff / 3600);
     *minutes = (int)((time_diff - (*hours * 3600)) / 60);
     *seconds = (int)(time_diff - (*hours * 3600) - (*minutes * 60));
-}
+}//사용 시간을 계산하는 함수
 
 void menual() {
     printf(" _______  __   __  _______    _______  ______   ___   _______  _______  ______ \n"  
@@ -326,101 +317,11 @@ void menual() {
     printf("reiptime : iptime.txt 파일을 초기화 합니다.\n");
     printf("reproject : project.txt 파일을 초기화 합니다.\n\n");
     printf("***log파일 읽는 방법***\n");
-    printf("Username: 사용자명\n");
+    printf("IP Address: 사용자 아이피(ip)\n");
     printf("Start Time: 프로그램 시작시간\n");
     printf("Program End Time: 프로그램 종료 시간\n");
     printf("Total Time Used: 프로그램 사용 시간\n");
     printf("Final File Size: 파일의 용량\n");
     printf("====================================================================================================================\n");
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 15);
-}
-
-void error_handling(char *message) {
-    perror(message);
-    exit(1);
-}
-
-void bring_file() {
-    int server_sock, client_sock;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t client_addr_size;
-    char buffer[BUFFER_SIZE];
-    FILE *file;
-
-    server_sock = socket(PF_INET, SOCK_STREAM, 0);
-    if (server_sock == -1)
-        error_handling("socket() error");
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(PORT);
-
-    if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1)
-        error_handling("bind() error");
-
-    if (listen(server_sock, 5) == -1)
-        error_handling("listen() error");
-
-    client_addr_size = sizeof(client_addr);
-    client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_addr_size);
-    if (client_sock == -1)
-        error_handling("accept() error");
-
-    file = fopen("received_file", "wb");
-    if (file == NULL)
-        error_handling("fopen() error");
-
-    int bytes_received;
-    while ((bytes_received = read(client_sock, buffer, BUFFER_SIZE)) > 0) {
-        fwrite(buffer, sizeof(char), bytes_received, file);
-    }
-
-    if (bytes_received < 0)
-        error_handling("read() error");
-
-    printf("File received successfully.\n");
-
-    fclose(file);
-    close(client_sock);
-    close(server_sock);
-}
-
-void error_handling(char *message) {
-    perror(message);
-    exit(1);
-}
-
-void send_file(const char *server_ip) {
-    int sock;
-    struct sockaddr_in server_addr;
-    char buffer[BUFFER_SIZE];
-    FILE *file;
-
-    sock = socket(PF_INET, SOCK_STREAM, 0);
-    if (sock == -1)
-        error_handling("socket() error");
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(server_ip);
-    server_addr.sin_port = htons(PORT);
-
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1)
-        error_handling("connect() error");
-
-    file = fopen("send_file", "rb");
-    if (file == NULL)
-        error_handling("fopen() error");
-
-    int bytes_read;
-    while ((bytes_read = fread(buffer, sizeof(char), BUFFER_SIZE, file)) > 0) {
-        if (write(sock, buffer, bytes_read) != bytes_read)
-            error_handling("write() error");
-    }
-
-    printf("File sent successfully.\n");
-
-    fclose(file);
-    close(sock);
-}
+}//매뉴얼을 출력하는 함수
